@@ -1,0 +1,33 @@
+---
+import Layout from "../layouts/Layout.astro";
+---
+
+<Layout
+  title="Privacy"
+  description="How Elder Pickle handles accounts, comments, and email."
+>
+  <h1 class="hero-title">Privacy</h1>
+  <div class="prose">
+    <p>
+      Elder Pickle uses <strong>Clerk</strong> for authentication. When you create an
+      account or sign in, Clerk processes identity data such as your email address
+      and profile details according to Clerk’s policies.
+    </p>
+    <p>
+      If you leave a comment, we store the comment body, your display name, your
+      Clerk user id, the post slug, timestamps, and moderation status in
+      <strong>Convex</strong>. Comments are public by default unless soft-hidden by
+      the site owner.
+    </p>
+    <p>
+      When a new comment is posted, Elder Pickle may send a transactional email
+      notification to the site owner only. We do not send comment notification
+      emails to other readers or build a marketing list from comments.
+    </p>
+    <p>
+      Soft-hidden comments are retained for moderation and are not shown on the
+      public post. To request deletion of your account-linked comments, contact
+      the site owner using the email address associated with this domain.
+    </p>
+  </div>
+</Layout>

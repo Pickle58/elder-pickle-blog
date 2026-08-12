@@ -1,0 +1,12 @@
+---
+export const prerender = false;
+
+import AdminComments from "../../components/AdminComments";
+import Layout from "../../layouts/Layout.astro";
+---
+
+<Layout title="Comment admin" description="Moderate Elder Pickle comments.">
+  <h1 class="hero-title">Comment admin</h1>
+  <p class="lede">Soft-hide or restore comments. Access is limited to the site owner.</p>
+  <AdminComments client:only="react" />
+</Layout>

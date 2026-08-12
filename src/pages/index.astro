@@ -1,0 +1,37 @@
+---
+import { getCollection } from "astro:content";
+import Layout from "../layouts/Layout.astro";
+
+const posts = (await getCollection("posts", ({ data }) => !data.draft)).sort(
+  (a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf(),
+);
+---
+
+<Layout title="Elder Pickle" description="Notes from Elder Pickle.">
+  <h1 class="hero-title">Elder Pickle</h1>
+  <p class="lede">Short notes, published as Markdown. Comments welcome if you are signed in.</p>
+
+  {
+    posts.length === 0 ? (
+      <p class="muted">No posts yet.</p>
+    ) : (
+      <ul class="post-list">
+        {posts.map((post) => (
+          <li>
+            <a href={`/posts/${post.id}/`}>
+              <h2>{post.data.title}</h2>
+              <p>{post.data.description}</p>
+              <p class="meta">
+                {post.data.pubDate.toLocaleDateString("en-US", {
+                  year: "numeric",
+                  month: "long",
+                  day: "numeric",
+                })}
+              </p>
+            </a>
+          </li>
+        ))}
+      </ul>
+    )
+  }
+</Layout>

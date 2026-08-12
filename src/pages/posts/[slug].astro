@@ -1,0 +1,45 @@
+---
+import { getCollection, getEntry, render } from "astro:content";
+import Comments from "../../components/Comments";
+import Layout from "../../layouts/Layout.astro";
+
+export async function getStaticPaths() {
+  const posts = await getCollection("posts", ({ data }) => !data.draft);
+  return posts.map((post) => ({
+    params: { slug: post.id },
+  }));
+}
+
+const { slug } = Astro.params;
+if (!slug) {
+  return Astro.redirect("/");
+}
+
+const post = await getEntry("posts", slug);
+if (!post || post.data.draft) {
+  return new Response(null, { status: 404, statusText: "Not found" });
+}
+
+const { Content } = await render(post);
+const postUrl = new URL(`/posts/${post.id}/`, Astro.site ?? Astro.url).pathname;
+---
+
+<Layout title={post.data.title} description={post.data.description}>
+  <article>
+    <h1 class="hero-title">{post.data.title}</h1>
+    <p class="meta">
+      {
+        post.data.pubDate.toLocaleDateString("en-US", {
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+        })
+      }
+    </p>
+    <div class="prose">
+      <Content />
+    </div>
+  </article>
+
+  <Comments client:load postSlug={post.id} postTitle={post.data.title} postUrl={postUrl} />
+</Layout>
