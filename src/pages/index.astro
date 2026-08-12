@@ -1,4 +1,5 @@
 ---
+import { Image } from "astro:assets";
 import { getCollection } from "astro:content";
 import Layout from "../layouts/Layout.astro";
 
@@ -9,7 +10,9 @@ const posts = (await getCollection("posts", ({ data }) => !data.draft)).sort(
 
 <Layout title="Elder Pickle" description="Notes from Elder Pickle.">
   <h1 class="hero-title">Elder Pickle</h1>
-  <p class="lede">Short notes, published as Markdown. Comments welcome if you are signed in.</p>
+  <p class="lede">
+    Short notes from Elder Pickle. Comments welcome if you are signed in.
+  </p>
 
   {
     posts.length === 0 ? (
@@ -19,6 +22,17 @@ const posts = (await getCollection("posts", ({ data }) => !data.draft)).sort(
         {posts.map((post) => (
           <li>
             <a href={`/posts/${post.id}/`}>
+              {post.data.heroImage && (
+                <Image
+                  class="post-list-thumb"
+                  src={post.data.heroImage}
+                  alt=""
+                  width={640}
+                  height={360}
+                  widths={[320, 640]}
+                  sizes="(max-width: 720px) 100vw, 640px"
+                />
+              )}
               <h2>{post.data.title}</h2>
               <p>{post.data.description}</p>
               <p class="meta">
