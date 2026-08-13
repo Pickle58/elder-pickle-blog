@@ -2,6 +2,19 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
 export default defineSchema({
+  posts: defineTable({
+    slug: v.string(),
+    title: v.string(),
+    description: v.string(),
+    pubDate: v.number(),
+    draft: v.boolean(),
+    bodyMarkdoc: v.string(),
+    heroImageId: v.optional(v.id("_storage")),
+    githubSha: v.optional(v.string()),
+    updatedAt: v.number(),
+  })
+    .index("by_slug", ["slug"])
+    .index("by_draft_and_pubDate", ["draft", "pubDate"]),
   comments: defineTable({
     postSlug: v.string(),
     clerkUserId: v.string(),

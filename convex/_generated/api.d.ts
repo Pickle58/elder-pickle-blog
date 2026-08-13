@@ -9,7 +9,11 @@
  */
 
 import type * as comments from "../comments.js";
+import type * as http from "../http.js";
 import type * as lib_auth from "../lib/auth.js";
+import type * as lib_mdoc from "../lib/mdoc.js";
+import type * as posts from "../posts.js";
+import type * as postsIngest from "../postsIngest.js";
 
 import type {
   ApiFromModules,
@@ -19,7 +23,11 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   comments: typeof comments;
+  http: typeof http;
   "lib/auth": typeof lib_auth;
+  "lib/mdoc": typeof lib_mdoc;
+  posts: typeof posts;
+  postsIngest: typeof postsIngest;
 }>;
 
 /**

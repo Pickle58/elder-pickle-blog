@@ -1,11 +1,20 @@
 ---
-import { Image } from "astro:assets";
-import { getCollection } from "astro:content";
-import Layout from "../layouts/Layout.astro";
+export const prerender = false;
 
-const posts = (await getCollection("posts", ({ data }) => !data.draft)).sort(
-  (a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf(),
-);
+import PostList from "../components/PostList";
+import Layout from "../layouts/Layout.astro";
+import { api } from "../../convex/_generated/api";
+import { getConvexHttpClient } from "../lib/convex-server";
+
+const client = getConvexHttpClient();
+const posts = client ? await client.query(api.posts.listPublished, {}) : [];
+const initialPosts = posts.map((post) => ({
+  slug: post.slug,
+  title: post.title,
+  description: post.description,
+  pubDate: post.pubDate,
+  heroImageUrl: post.heroImageUrl,
+}));
 ---
 
 <Layout title="Elder Pickle" description="Notes from Elder Pickle.">
@@ -15,37 +24,12 @@ const posts = (await getCollection("posts", ({ data }) => !data.draft)).sort(
   </p>
 
   {
-    posts.length === 0 ? (
-      <p class="muted">No posts yet.</p>
+    !client ? (
+      <p class="muted">
+        Posts are unavailable until <code>PUBLIC_CONVEX_URL</code> is configured.
+      </p>
     ) : (
-      <ul class="post-list">
-        {posts.map((post) => (
-          <li>
-            <a href={`/posts/${post.id}/`}>
-              {post.data.heroImage && (
-                <Image
-                  class="post-list-thumb"
-                  src={post.data.heroImage}
-                  alt=""
-                  width={640}
-                  height={360}
-                  widths={[320, 640]}
-                  sizes="(max-width: 720px) 100vw, 640px"
-                />
-              )}
-              <h2>{post.data.title}</h2>
-              <p>{post.data.description}</p>
-              <p class="meta">
-                {post.data.pubDate.toLocaleDateString("en-US", {
-                  year: "numeric",
-                  month: "long",
-                  day: "numeric",
-                })}
-              </p>
-            </a>
-          </li>
-        ))}
-      </ul>
+      <PostList client:load initialPosts={initialPosts} />
     )
   }
 </Layout>

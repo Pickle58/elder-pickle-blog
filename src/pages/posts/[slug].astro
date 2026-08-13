@@ -1,58 +1,49 @@
 ---
-import { Image } from "astro:assets";
-import { getCollection, getEntry, render } from "astro:content";
-import Comments from "../../components/Comments";
-import Layout from "../../layouts/Layout.astro";
+export const prerender = false;
 
-export async function getStaticPaths() {
-  const posts = await getCollection("posts", ({ data }) => !data.draft);
-  return posts.map((post) => ({
-    params: { slug: post.id },
-  }));
-}
+import Comments from "../../components/Comments";
+import PostArticle from "../../components/PostArticle";
+import Layout from "../../layouts/Layout.astro";
+import { api } from "../../../convex/_generated/api";
+import { getConvexHttpClient } from "../../lib/convex-server";
+import { renderMarkdocToHtml } from "../../lib/render-markdoc";
 
 const { slug } = Astro.params;
 if (!slug) {
   return Astro.redirect("/");
 }
 
-const post = await getEntry("posts", slug);
-if (!post || post.data.draft) {
+const client = getConvexHttpClient();
+if (!client) {
+  return new Response("Convex is not configured.", {
+    status: 503,
+    statusText: "Service Unavailable",
+  });
+}
+
+const post = await client.query(api.posts.getBySlug, { slug });
+if (!post) {
   return new Response(null, { status: 404, statusText: "Not found" });
 }
 
-const { Content } = await render(post);
-// Absolute URL for email notify links (path-only becomes http:///… in mail clients).
-const postUrl = new URL(`/posts/${post.id}/`, Astro.site ?? Astro.url).href;
+const bodyHtml = renderMarkdocToHtml(post.bodyMarkdoc);
+const postUrl = new URL(`/posts/${post.slug}/`, Astro.site ?? Astro.url).href;
 ---
 
-<Layout title={post.data.title} description={post.data.description}>
-  <article>
-    <h1 class="hero-title">{post.data.title}</h1>
-    <p class="meta">
-      {
-        post.data.pubDate.toLocaleDateString("en-US", {
-          year: "numeric",
-          month: "long",
-          day: "numeric",
-        })
-      }
-    </p>
-    {
-      post.data.heroImage && (
-        <Image
-          class="post-hero"
-          src={post.data.heroImage}
-          alt=""
-          widths={[640, 960, 1280]}
-          sizes="(max-width: 720px) 100vw, 720px"
-        />
-      )
-    }
-    <div class="prose">
-      <Content />
-    </div>
-  </article>
+<Layout title={post.title} description={post.description}>
+  <PostArticle
+    client:load
+    slug={post.slug}
+    initialTitle={post.title}
+    initialPubDate={post.pubDate}
+    initialHeroImageUrl={post.heroImageUrl}
+    initialBodyHtml={bodyHtml}
+  />
 
-  <Comments client:load postSlug={post.id} postTitle={post.data.title} postUrl={postUrl} />
+  <Comments
+    client:load
+    postSlug={post.slug}
+    postTitle={post.title}
+    postUrl={postUrl}
+  />
 </Layout>
