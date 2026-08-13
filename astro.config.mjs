@@ -7,6 +7,7 @@ import clerk from "@clerk/astro";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig, envField } from "astro/config";
 
+const srcDir = fileURLToPath(new URL("./src", import.meta.url));
 const assetsDir = fileURLToPath(new URL("./src/assets", import.meta.url));
 
 // https://astro.build/config
@@ -47,6 +48,7 @@ export default defineConfig({
     plugins: [tailwindcss()],
     resolve: {
       alias: {
+        "@": srcDir,
         "@assets": assetsDir,
       },
     },

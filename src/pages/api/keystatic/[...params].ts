@@ -87,6 +87,7 @@ function applySetCookies(
       httpOnly: options.httpOnly,
       maxAge: options.maxAge,
       path: options.path,
+      secure: options.secure,
       sameSite:
         sameSite === "lax" || sameSite === "strict" || sameSite === "none"
           ? sameSite
