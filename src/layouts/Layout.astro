@@ -10,11 +10,17 @@ import "../styles/global.css";
 interface Props {
   title?: string;
   description?: string;
+  /** "app" keeps the site nav and hides the footer for full-page tools. */
+  chrome?: "site" | "app";
 }
 
-const { title = "Elder Pickle", description = "Notes from Elder Pickle." } =
-  Astro.props;
+const {
+  title = "Elder Pickle",
+  description = "Notes from Elder Pickle.",
+  chrome = "site",
+} = Astro.props;
 const pageTitle = title === "Elder Pickle" ? title : `${title} · Elder Pickle`;
+const isAppChrome = chrome === "app";
 ---
 
 <!doctype html>
@@ -27,7 +33,7 @@ const pageTitle = title === "Elder Pickle" ? title : `${title} · Elder Pickle`;
     <meta name="description" content={description} />
     <title>{pageTitle}</title>
   </head>
-  <body>
+  <body class:list={[isAppChrome && "layout-app"]}>
     <header class="site-header">
       <a class="brand" href="/">Elder Pickle</a>
       <nav class="nav" aria-label="Primary">
@@ -46,14 +52,18 @@ const pageTitle = title === "Elder Pickle" ? title : `${title} · Elder Pickle`;
         </div>
       </nav>
     </header>
-    <main>
+    <main class={isAppChrome ? "app-main" : "site-content"}>
       <slot />
     </main>
-    <footer class="site-footer">
-      <p>
-        © {new Date().getFullYear()} Elder Pickle ·
-        <a href="/privacy">Privacy</a>
-      </p>
-    </footer>
+    {
+      !isAppChrome && (
+        <footer class="site-footer">
+          <p>
+            © {new Date().getFullYear()} Elder Pickle ·
+            <a href="/privacy">Privacy</a>
+          </p>
+        </footer>
+      )
+    }
   </body>
 </html>
