@@ -76,11 +76,13 @@ body {
   line-height: 1.6;
 }
 
-a {
+.site-content a,
+.site-footer a {
   color: var(--brand);
 }
 
-a:hover {
+.site-content a:hover,
+.site-footer a:hover {
   color: var(--brand-hover);
 }
 
@@ -130,15 +132,50 @@ a:hover {
   gap: 0.5rem;
 }
 
-main {
+main.site-content {
   width: min(720px, calc(100% - 2rem));
   margin: 0 auto;
   padding: 2.5rem 0 4rem;
 }
 
-h1,
-h2,
-h3 {
+body.layout-app {
+  min-height: 100dvh;
+  height: 100dvh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+body.layout-app .site-header {
+  flex-shrink: 0;
+  z-index: 20;
+}
+
+main.app-main {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.keystatic-shell {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Keystatic roots to 100vh; keep it inside the remaining layout column. */
+.keystatic-shell .kui-theme {
+  height: 100% !important;
+  min-height: 100% !important;
+  max-height: 100%;
+}
+
+.site-content :is(h1, h2, h3) {
   font-family: var(--font-display);
   line-height: 1.2;
   letter-spacing: -0.02em;
@@ -204,18 +241,100 @@ h3 {
   border-radius: var(--radius);
 }
 
-.prose :is(p, ul, ol) {
+/* Restore typography that Tailwind Preflight strips (lists, heading size/weight). */
+.prose :is(p, ul, ol, blockquote, pre) {
   margin: 0 0 1rem;
+}
+
+.prose :is(h1, h2, h3, h4) {
+  font-family: var(--font-display);
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  margin: 1.5rem 0 0.75rem;
+}
+
+.prose :is(h1, h2, h3, h4):first-child {
+  margin-top: 0;
+}
+
+.prose h1 {
+  font-size: 1.75rem;
+}
+
+.prose h2 {
+  font-size: 1.4rem;
+}
+
+.prose h3 {
+  font-size: 1.2rem;
+}
+
+.prose h4 {
+  font-size: 1.05rem;
+}
+
+.prose ul {
+  list-style-type: disc;
+  padding-left: 1.5rem;
+}
+
+.prose ol {
+  list-style-type: decimal;
+  padding-left: 1.5rem;
+}
+
+.prose li {
+  margin: 0 0 0.35rem;
+}
+
+.prose li > :is(ul, ol) {
+  margin: 0.35rem 0 0;
+}
+
+.prose strong {
+  font-weight: 700;
+}
+
+.prose em {
+  font-style: italic;
+}
+
+.prose blockquote {
+  padding-left: 1rem;
+  border-left: 3px solid var(--border);
+  color: var(--ink-muted);
+}
+
+.prose hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 1.5rem 0;
+}
+
+.prose pre,
+.prose code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.9em;
+}
+
+.prose pre {
+  overflow-x: auto;
+  padding: 0.75rem;
+  background: var(--bg-accent);
+  border-radius: 6px;
+}
+
+.prose :not(pre) > code {
+  padding: 0.1em 0.35em;
+  background: var(--bg-accent);
+  border-radius: 4px;
 }
 
 .prose img {
   max-width: 100%;
   height: auto;
   border-radius: var(--radius);
-}
-
-.prose :is(ul, ol) {
-  padding-left: 1.25rem;
 }
 
 .site-footer {
@@ -245,13 +364,11 @@ h3 {
   gap: 0.75rem;
 }
 
-textarea,
-button,
-input {
+.site-content :is(textarea, button, input) {
   font: inherit;
 }
 
-textarea {
+.site-content textarea {
   width: 100%;
   min-height: 120px;
   padding: 0.75rem;
@@ -262,7 +379,7 @@ textarea {
   resize: vertical;
 }
 
-button {
+.site-content button {
   appearance: none;
   border: none;
   border-radius: 6px;
@@ -273,22 +390,22 @@ button {
   width: fit-content;
 }
 
-button:hover:not(:disabled) {
+.site-content button:hover:not(:disabled) {
   background: var(--brand-hover);
 }
 
-button:disabled {
+.site-content button:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
 
-button.secondary {
+.site-content button.secondary {
   background: transparent;
   color: var(--brand);
   border: 1px solid var(--border);
 }
 
-button.danger {
+.site-content button.danger {
   background: var(--danger);
 }
 
@@ -306,8 +423,55 @@ button.danger {
   margin-bottom: 0.5rem;
 }
 
-.comment-body :is(p, ul, ol, pre) {
+.comment-body :is(p, ul, ol, pre, blockquote) {
   margin: 0 0 0.75rem;
+}
+
+.comment-body :is(h1, h2, h3, h4) {
+  font-family: var(--font-display);
+  font-weight: 700;
+  line-height: 1.2;
+  margin: 1rem 0 0.5rem;
+}
+
+.comment-body h1 {
+  font-size: 1.35rem;
+}
+
+.comment-body h2 {
+  font-size: 1.2rem;
+}
+
+.comment-body h3 {
+  font-size: 1.1rem;
+}
+
+.comment-body ul {
+  list-style-type: disc;
+  padding-left: 1.5rem;
+}
+
+.comment-body ol {
+  list-style-type: decimal;
+  padding-left: 1.5rem;
+}
+
+.comment-body li {
+  margin: 0 0 0.25rem;
+}
+
+.comment-body strong {
+  font-weight: 700;
+}
+
+.comment-body em {
+  font-style: italic;
+}
+
+.comment-body blockquote {
+  padding-left: 0.85rem;
+  border-left: 3px solid var(--border);
+  color: var(--ink-muted);
 }
 
 .comment-body :last-child {
@@ -329,6 +493,12 @@ button.danger {
   padding: 0.75rem;
   background: var(--bg-accent);
   border-radius: 6px;
+}
+
+.comment-body :not(pre) > code {
+  padding: 0.1em 0.35em;
+  background: var(--bg-accent);
+  border-radius: 4px;
 }
 
 .status-pill {
