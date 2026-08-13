@@ -5,7 +5,7 @@ Astro blog on Cloudflare with Keystatic authoring, Clerk auth, Convex posts + co
 ## Stack
 
 - **Posts (serving):** Convex `posts` table — public site reads Convex at request time (on-demand routes)
-- **Posts (authoring):** [Keystatic](https://keystatic.com/) at `/keystatic` (GitHub mode — Cloudflare workerd cannot use Keystatic local/fs storage). Saves commit `.mdoc` files to `main`.
+- **Posts (authoring):** [Keystatic](https://keystatic.com/) at `/keystatic` (GitHub mode — Cloudflare workerd cannot use Keystatic local/fs storage). Saves commit `.mdoc` files to `master`.
 - **Posts (sync):** GitHub `push` webhook → Convex HTTP action copies posts into Convex within seconds. Git is the authoring log; **Convex is the serving source of truth.** A site redeploy is not required for a new post to go live.
 - **Images:** Keystatic writes under `src/assets/images/posts/`; ingest stores them in Convex file storage for the live site (R2 later)
 - **Auth (readers / comments):** Clerk (`@clerk/astro`)
@@ -46,13 +46,13 @@ npx wrangler kv namespace create SESSION
    - Payload URL: `https://<your-deployment>.convex.site/github/keystatic`
    - Content type: `application/json`
    - Secret: same as `GITHUB_WEBHOOK_SECRET`
-   - Events: **push** (Keystatic should commit to `main`)
+   - Events: **push** (Keystatic should commit to `master`)
 
 ### Keystatic (create / edit posts)
 
 Posts are authored in Keystatic at `/keystatic` using **GitHub mode** (required because this site uses the Cloudflare adapter — Keystatic `local` storage needs Node.js and does not work in workerd).
 
-You can still edit `src/content/posts/*.mdoc` files directly in your editor if you prefer; push to `main` so the webhook ingests them.
+You can still edit `src/content/posts/*.mdoc` files directly in your editor if you prefer; push to `master` so the webhook ingests them.
 
 **Setup (local + production)**
 
@@ -66,7 +66,7 @@ You can still edit `src/content/posts/*.mdoc` files directly in your editor if y
    - `PUBLIC_KEYSTATIC_GITHUB_APP_SLUG`
 
 4. Run `pnpm dev` and open `http://127.0.0.1:4321/keystatic` — sign in with GitHub (repo write access).
-5. Saving in Keystatic commits to `main`; the Convex webhook ingests the post so `/` and `/posts/<slug>/` show it within seconds (no rebuild required).
+5. Saving in Keystatic commits to `master`; the Convex webhook ingests the post so `/` and `/posts/<slug>/` show it within seconds (no rebuild required). The webhook must use **JSON** content type (not form) and the same secret as `GITHUB_WEBHOOK_SECRET`.
 
 Comment moderation at `/admin/comments` still uses Clerk (`ADMIN_CLERK_USER_ID`), separate from Keystatic’s GitHub login.
 

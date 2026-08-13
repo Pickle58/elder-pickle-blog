@@ -1,6 +1,11 @@
 import { httpRouter } from "convex/server";
 import { internal } from "./_generated/api";
 import { httpAction } from "./_generated/server";
+import {
+  collectPostPathsToIngest,
+  parseGithubWebhookBody,
+  shouldIngestRef,
+} from "./lib/githubPush";
 
 const http = httpRouter();
 
@@ -50,6 +55,40 @@ type PushPayload = {
   }>;
 };
 
+function asStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter((item): item is string => typeof item === "string");
+}
+
+function asPushPayload(value: unknown): PushPayload | null {
+  if (typeof value !== "object" || value === null) {
+    return null;
+  }
+  const record = value as Record<string, unknown>;
+  const commitsRaw = record.commits;
+  const commits = Array.isArray(commitsRaw)
+    ? commitsRaw.map((commit) => {
+        if (typeof commit !== "object" || commit === null) {
+          return { added: [], modified: [], removed: [] };
+        }
+        const c = commit as Record<string, unknown>;
+        return {
+          added: asStringArray(c.added),
+          modified: asStringArray(c.modified),
+          removed: asStringArray(c.removed),
+        };
+      })
+    : [];
+
+  return {
+    ref: typeof record.ref === "string" ? record.ref : undefined,
+    after: typeof record.after === "string" ? record.after : undefined,
+    commits,
+  };
+}
+
 http.route({
   path: "/github/keystatic",
   method: "POST",
@@ -66,18 +105,41 @@ http.route({
       return new Response("Invalid signature.", { status: 401 });
     }
 
-    let payload: PushPayload;
+    const event = req.headers.get("x-github-event");
+    if (event === "ping") {
+      return new Response(JSON.stringify({ ok: true, ping: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (event !== "push") {
+      return new Response(JSON.stringify({ ignored: true, reason: "not push" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    let parsed: unknown;
     try {
-      payload = JSON.parse(body) as PushPayload;
+      parsed = parseGithubWebhookBody(body);
     } catch {
       return new Response("Invalid JSON.", { status: 400 });
     }
 
-    if (payload.ref !== "refs/heads/main") {
-      return new Response(JSON.stringify({ ignored: true, reason: "not main" }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
+    const payload = asPushPayload(parsed);
+    if (!payload) {
+      return new Response("Invalid payload.", { status: 400 });
+    }
+
+    if (!shouldIngestRef(payload.ref)) {
+      return new Response(
+        JSON.stringify({ ignored: true, reason: "not ingest branch" }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
     }
 
     const added = new Set<string>();
@@ -95,12 +157,20 @@ http.route({
       modified.delete(p);
     }
 
+    const paths = collectPostPathsToIngest(
+      [...added],
+      [...modified],
+      [...removed],
+    );
+
     await ctx.runAction(internal.postsIngest.ingestPush, {
-      ref: payload.ref ?? "refs/heads/main",
-      afterSha: typeof payload.after === "string" ? payload.after : "main",
+      ref: payload.ref ?? "refs/heads/master",
+      afterSha: typeof payload.after === "string" ? payload.after : "master",
       added: [...added],
       modified: [...modified],
       removed: [...removed],
+      upsertPaths: paths.upsertPaths,
+      forceSlugs: paths.forceSlugs,
     });
 
     return new Response(JSON.stringify({ ok: true }), {
