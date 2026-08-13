@@ -138,10 +138,16 @@ main.site-content {
   padding: 2.5rem 0 4rem;
 }
 
+html:has(body.layout-app),
+body.layout-app {
+  height: auto !important;
+  max-height: none !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+}
+
 body.layout-app {
   min-height: 100dvh;
-  height: 100dvh;
-  overflow: hidden;
   display: flex;
   flex-direction: column;
 }
@@ -153,26 +159,22 @@ body.layout-app .site-header {
 
 main.app-main {
   flex: 1;
-  min-height: 0;
   width: 100%;
   margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
 }
 
 .keystatic-shell {
   flex: 1;
-  min-height: 0;
-  overflow: hidden;
 }
 
-/* Keystatic roots to 100vh; keep it inside the remaining layout column. */
+/* Fill the remaining column, but grow with the item form so Create/Save stays reachable. */
 .keystatic-shell .kui-theme {
-  height: 100% !important;
-  min-height: 100% !important;
-  max-height: 100%;
+  height: auto !important;
+  min-height: calc(100dvh - 6rem);
+  max-height: none;
 }
 
 .site-content :is(h1, h2, h3) {
