@@ -259,25 +259,67 @@ export const ingestPush = internalAction({
 });
 
 const DEFAULT_BRANCH = "master";
+/** Cap retries for transient GitHub / missing-token failures. */
+const GITHUB_DELETE_RETRY_MS = 60_000;
 
 function contentsPathUrl(path: string): string {
   const encoded = encodeURIComponent(path).replace(/%2F/g, "/");
   return `https://api.github.com/repos/${REPO}/contents/${encoded}`;
 }
 
+async function failGithubDelete(
+  ctx: ActionCtx,
+  slug: string,
+  error: string,
+  options?: { permanent?: boolean },
+): Promise<void> {
+  const result = await ctx.runMutation(internal.posts.recordGithubDeleteFailure, {
+    slug,
+    error,
+    permanent: options?.permanent === true,
+  });
+  if (result.shouldRetry) {
+    await ctx.scheduler.runAfter(
+      GITHUB_DELETE_RETRY_MS,
+      internal.postsIngest.deleteGithubMdoc,
+      { slug },
+    );
+    console.error(
+      `GitHub mdoc delete for ${slug} failed (attempt ${result.attempts}, retrying): ${error}`,
+    );
+    return;
+  }
+  console.error(
+    `GitHub mdoc delete for ${slug} permanently failed after ${result.attempts} attempts: ${error}`,
+  );
+  throw new Error(
+    `GitHub mdoc delete for ${slug} failed permanently after ${result.attempts} attempts: ${error}`,
+  );
+}
+
+function isPermanentGithubStatus(status: number): boolean {
+  return status === 401 || status === 403;
+}
+
 /** Delete `src/content/posts/{slug}.mdoc` so admin hard-delete stays in sync with git. */
 export const deleteGithubMdoc = internalAction({
   args: { slug: v.string() },
   returns: v.null(),
-  handler: async (_ctx, args) => {
-    const token = process.env.GITHUB_TOKEN;
-    if (!token) {
-      console.error("Skipping GitHub mdoc delete: GITHUB_TOKEN missing.");
-      return null;
-    }
-
+  handler: async (ctx, args) => {
     const slug = args.slug.trim();
     if (!slug) {
+      throw new Error("Slug is required for GitHub mdoc delete.");
+    }
+
+    // Ensure a durable tombstone exists even if scheduled without enqueue.
+    await ctx.runMutation(internal.posts.enqueueGithubDelete, {
+      slug,
+      resetAttempts: false,
+    });
+
+    const token = process.env.GITHUB_TOKEN;
+    if (!token) {
+      await failGithubDelete(ctx, slug, "GITHUB_TOKEN missing");
       return null;
     }
 
@@ -288,20 +330,26 @@ export const deleteGithubMdoc = internalAction({
     });
 
     if (getResponse.status === 404) {
+      await ctx.runMutation(internal.posts.clearGithubDelete, { slug });
       return null;
     }
 
     if (!getResponse.ok) {
       const text = await getResponse.text();
-      console.error(
+      await failGithubDelete(
+        ctx,
+        slug,
         `GitHub get ${path} failed (${getResponse.status}): ${text.slice(0, 300)}`,
+        { permanent: isPermanentGithubStatus(getResponse.status) },
       );
       return null;
     }
 
     const json = (await getResponse.json()) as GithubContentResponse;
     if (!json.sha) {
-      console.error(`GitHub get ${path}: missing sha.`);
+      await failGithubDelete(ctx, slug, `GitHub get ${path}: missing sha`, {
+        permanent: true,
+      });
       return null;
     }
 
@@ -319,16 +367,22 @@ export const deleteGithubMdoc = internalAction({
     });
 
     if (deleteResponse.status === 404) {
+      await ctx.runMutation(internal.posts.clearGithubDelete, { slug });
       return null;
     }
 
     if (!deleteResponse.ok) {
       const text = await deleteResponse.text();
-      console.error(
+      await failGithubDelete(
+        ctx,
+        slug,
         `GitHub delete ${path} failed (${deleteResponse.status}): ${text.slice(0, 300)}`,
+        { permanent: isPermanentGithubStatus(deleteResponse.status) },
       );
+      return null;
     }
 
+    await ctx.runMutation(internal.posts.clearGithubDelete, { slug });
     return null;
   },
 });
