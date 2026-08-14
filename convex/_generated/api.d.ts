@@ -9,8 +9,10 @@
  */
 
 import type * as comments from "../comments.js";
+import type * as crons from "../crons.js";
 import type * as http from "../http.js";
 import type * as lib_auth from "../lib/auth.js";
+import type * as lib_githubDelete from "../lib/githubDelete.js";
 import type * as lib_githubPush from "../lib/githubPush.js";
 import type * as lib_mdoc from "../lib/mdoc.js";
 import type * as posts from "../posts.js";
@@ -24,8 +26,10 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   comments: typeof comments;
+  crons: typeof crons;
   http: typeof http;
   "lib/auth": typeof lib_auth;
+  "lib/githubDelete": typeof lib_githubDelete;
   "lib/githubPush": typeof lib_githubPush;
   "lib/mdoc": typeof lib_mdoc;
   posts: typeof posts;

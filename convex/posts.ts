@@ -9,6 +9,11 @@ import {
 } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { assertAdmin, requireIdentity } from "./lib/auth";
+import {
+  GITHUB_DELETE_MAX_AGE_MS,
+  GITHUB_DELETE_MAX_ATTEMPTS,
+  isGithubDeleteStale,
+} from "./lib/githubDelete";
 
 const LIST_PUBLISHED_LIMIT = 50;
 const LIST_ADMIN_LIMIT = 200;
@@ -59,24 +64,24 @@ function storageIdsFromBody(bodyMarkdoc: string): Id<"_storage">[] {
   return [...ids] as Id<"_storage">[];
 }
 
-/** True if any remaining post still uses this blob as hero or in body Markdoc. */
-async function storageIdStillReferenced(
+/**
+ * Collect every hero and body-embedded storage ID still referenced by posts.
+ * Must scan the full table — a truncated take() can delete blobs another post uses.
+ */
+async function referencedStorageIds(
   ctx: MutationCtx,
-  storageId: Id<"_storage">,
-): Promise<boolean> {
-  // Blog post count stays small; scan is required for body-embedded storage URLs.
-  const posts = await ctx.db.query("posts").take(LIST_ADMIN_LIMIT);
+): Promise<Set<Id<"_storage">>> {
+  const posts = await ctx.db.query("posts").collect();
+  const ids = new Set<Id<"_storage">>();
   for (const post of posts) {
-    if (post.heroImageId === storageId) {
-      return true;
+    if (post.heroImageId) {
+      ids.add(post.heroImageId);
     }
     for (const id of storageIdsFromBody(post.bodyMarkdoc)) {
-      if (id === storageId) {
-        return true;
-      }
+      ids.add(id);
     }
   }
-  return false;
+  return ids;
 }
 
 async function hardRemovePostBySlug(
@@ -112,8 +117,9 @@ async function hardRemovePostBySlug(
   // Delete the post first so self-references no longer block blob cleanup.
   await ctx.db.delete("posts", existing._id);
 
+  const referenced = await referencedStorageIds(ctx);
   for (const storageId of storageIds) {
-    if (await storageIdStillReferenced(ctx, storageId)) {
+    if (referenced.has(storageId)) {
       continue;
     }
     try {
@@ -177,6 +183,38 @@ export const listAll = query({
         heroImageUrl: await resolveHeroUrl(ctx, row.heroImageId),
       })),
     );
+  },
+});
+
+export const listPendingGithubDeletes = query({
+  args: {},
+  returns: v.array(
+    v.object({
+      _id: v.id("pendingGithubDeletes"),
+      slug: v.string(),
+      createdAt: v.number(),
+      attempts: v.number(),
+      lastError: v.optional(v.string()),
+      lastAttemptAt: v.optional(v.number()),
+    }),
+  ),
+  handler: async (ctx) => {
+    const identity = await requireIdentity(ctx);
+    assertAdmin(identity.subject);
+
+    const rows = await ctx.db
+      .query("pendingGithubDeletes")
+      .withIndex("by_attempts")
+      .take(LIST_ADMIN_LIMIT);
+
+    return rows.map((row) => ({
+      _id: row._id,
+      slug: row.slug,
+      createdAt: row.createdAt,
+      attempts: row.attempts,
+      lastError: row.lastError,
+      lastAttemptAt: row.lastAttemptAt,
+    }));
   },
 });
 
@@ -289,8 +327,6 @@ export const hardRemoveBySlug = internalMutation({
   },
 });
 
-const GITHUB_DELETE_MAX_ATTEMPTS = 8;
-
 async function upsertPendingGithubDelete(
   ctx: MutationCtx,
   slug: string,
@@ -359,6 +395,7 @@ export const recordGithubDeleteFailure = internalMutation({
     slug: v.string(),
     error: v.string(),
     permanent: v.optional(v.boolean()),
+    incrementAttempts: v.optional(v.boolean()),
   },
   returns: v.object({
     shouldRetry: v.boolean(),
@@ -383,18 +420,59 @@ export const recordGithubDeleteFailure = internalMutation({
       }
     }
 
-    const attempts = args.permanent
+    const now = Date.now();
+    const countAttempt = args.incrementAttempts !== false;
+    const expired =
+      !countAttempt && now - row.createdAt >= GITHUB_DELETE_MAX_AGE_MS;
+    const attempts = args.permanent || expired
       ? GITHUB_DELETE_MAX_ATTEMPTS
-      : row.attempts + 1;
+      : countAttempt
+        ? row.attempts + 1
+        : row.attempts;
     await ctx.db.patch(row._id, {
       attempts,
       lastError: args.error.slice(0, 500),
+      lastAttemptAt: now,
     });
 
     return {
       shouldRetry: attempts < GITHUB_DELETE_MAX_ATTEMPTS,
       attempts,
     };
+  },
+});
+
+/** Resume GitHub .mdoc deletes whose scheduled retry was lost. Exhausted rows stay visible. */
+export const resumeStaleGithubDeletes = internalMutation({
+  args: {},
+  returns: v.number(),
+  handler: async (ctx) => {
+    const now = Date.now();
+    const rows = await ctx.db
+      .query("pendingGithubDeletes")
+      .withIndex("by_attempts", (q) =>
+        q.lt("attempts", GITHUB_DELETE_MAX_ATTEMPTS),
+      )
+      .take(LIST_ADMIN_LIMIT);
+
+    let scheduled = 0;
+    for (const row of rows) {
+      if (
+        !isGithubDeleteStale({
+          attempts: row.attempts,
+          createdAt: row.createdAt,
+          lastAttemptAt: row.lastAttemptAt,
+          now,
+        })
+      ) {
+        continue;
+      }
+      await ctx.scheduler.runAfter(0, internal.postsIngest.deleteGithubMdoc, {
+        slug: row.slug,
+      });
+      scheduled += 1;
+    }
+    return scheduled;
   },
 });
 
@@ -416,13 +494,6 @@ export const remove = mutation({
 
     const removed = await hardRemovePostBySlug(ctx, slug);
     if (!removed) {
-      const pending = await ctx.db
-        .query("pendingGithubDeletes")
-        .withIndex("by_slug", (q) => q.eq("slug", slug))
-        .unique();
-      if (pending) {
-        await ctx.db.delete("pendingGithubDeletes", pending._id);
-      }
       throw new Error("Post not found.");
     }
 

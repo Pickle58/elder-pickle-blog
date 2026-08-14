@@ -15,6 +15,7 @@ import {
   parseMdoc,
   slugFromPostPath,
 } from "./lib/mdoc";
+import { githubDeleteRetryDelayMs } from "./lib/githubDelete";
 
 const REPO = "Pickle58/elder-pickle-blog";
 
@@ -259,28 +260,28 @@ export const ingestPush = internalAction({
 });
 
 const DEFAULT_BRANCH = "master";
-/** Cap retries for transient GitHub / missing-token failures. */
-const GITHUB_DELETE_RETRY_MS = 60_000;
 
 function contentsPathUrl(path: string): string {
-  const encoded = encodeURIComponent(path).replace(/%2F/g, "/");
-  return `https://api.github.com/repos/${REPO}/contents/${encoded}`;
+  return contentsUrl(path, DEFAULT_BRANCH).split("?")[0]!;
 }
 
 async function failGithubDelete(
   ctx: ActionCtx,
   slug: string,
   error: string,
-  options?: { permanent?: boolean },
+  options?: { permanent?: boolean; incrementAttempts?: boolean },
 ): Promise<void> {
   const result = await ctx.runMutation(internal.posts.recordGithubDeleteFailure, {
     slug,
     error,
     permanent: options?.permanent === true,
+    ...(options?.incrementAttempts === false
+      ? { incrementAttempts: false }
+      : {}),
   });
   if (result.shouldRetry) {
     await ctx.scheduler.runAfter(
-      GITHUB_DELETE_RETRY_MS,
+      githubDeleteRetryDelayMs(result.attempts),
       internal.postsIngest.deleteGithubMdoc,
       { slug },
     );
@@ -297,8 +298,47 @@ async function failGithubDelete(
   );
 }
 
-function isPermanentGithubStatus(status: number): boolean {
-  return status === 401 || status === 403;
+function hasSecondaryRateLimitSignal(body: string): boolean {
+  const lower = body.toLowerCase();
+  return (
+    lower.includes("secondary rate limit") ||
+    lower.includes("abuse detection")
+  );
+}
+
+function isPermanentGithubStatus(
+  status: number,
+  details?: {
+    retryAfter: string | null;
+    rateLimitRemaining: string | null;
+    body: string;
+  },
+): boolean {
+  if (status === 401) {
+    return true;
+  }
+  if (status !== 403) {
+    return false;
+  }
+  const hasRetryAfter = Boolean(details?.retryAfter);
+  const rateLimitExhausted = details?.rateLimitRemaining === "0";
+  const secondary = hasSecondaryRateLimitSignal(details?.body ?? "");
+  return !hasRetryAfter && !rateLimitExhausted && !secondary;
+}
+
+function githubStatusDetails(
+  response: Response,
+  body: string,
+): {
+  retryAfter: string | null;
+  rateLimitRemaining: string | null;
+  body: string;
+} {
+  return {
+    retryAfter: response.headers.get("retry-after"),
+    rateLimitRemaining: response.headers.get("x-ratelimit-remaining"),
+    body,
+  };
 }
 
 /** Delete `src/content/posts/{slug}.mdoc` so admin hard-delete stays in sync with git. */
@@ -319,13 +359,14 @@ export const deleteGithubMdoc = internalAction({
 
     const token = process.env.GITHUB_TOKEN;
     if (!token) {
-      await failGithubDelete(ctx, slug, "GITHUB_TOKEN missing");
+      await failGithubDelete(ctx, slug, "GITHUB_TOKEN missing", {
+        incrementAttempts: false,
+      });
       return null;
     }
 
     const path = `${POSTS_PREFIX}${slug}.mdoc`;
-    const getUrl = `${contentsPathUrl(path)}?ref=${encodeURIComponent(DEFAULT_BRANCH)}`;
-    const getResponse = await fetch(getUrl, {
+    const getResponse = await fetch(contentsUrl(path, DEFAULT_BRANCH), {
       headers: githubHeaders(token, "application/vnd.github+json"),
     });
 
@@ -340,7 +381,12 @@ export const deleteGithubMdoc = internalAction({
         ctx,
         slug,
         `GitHub get ${path} failed (${getResponse.status}): ${text.slice(0, 300)}`,
-        { permanent: isPermanentGithubStatus(getResponse.status) },
+        {
+          permanent: isPermanentGithubStatus(
+            getResponse.status,
+            githubStatusDetails(getResponse, text),
+          ),
+        },
       );
       return null;
     }
@@ -377,7 +423,12 @@ export const deleteGithubMdoc = internalAction({
         ctx,
         slug,
         `GitHub delete ${path} failed (${deleteResponse.status}): ${text.slice(0, 300)}`,
-        { permanent: isPermanentGithubStatus(deleteResponse.status) },
+        {
+          permanent: isPermanentGithubStatus(
+            deleteResponse.status,
+            githubStatusDetails(deleteResponse, text),
+          ),
+        },
       );
       return null;
     }

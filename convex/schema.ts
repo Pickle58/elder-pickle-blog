@@ -34,5 +34,8 @@ export default defineSchema({
     createdAt: v.number(),
     attempts: v.number(),
     lastError: v.optional(v.string()),
-  }).index("by_slug", ["slug"]),
+    lastAttemptAt: v.optional(v.number()),
+  })
+    .index("by_slug", ["slug"])
+    .index("by_attempts", ["attempts"]),
 });
