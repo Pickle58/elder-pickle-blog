@@ -14,6 +14,7 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_slug", ["slug"])
+    .index("by_pubDate", ["pubDate"])
     .index("by_draft_and_pubDate", ["draft", "pubDate"]),
   comments: defineTable({
     postSlug: v.string(),
@@ -27,4 +28,11 @@ export default defineSchema({
     .index("by_postSlug", ["postSlug"])
     .index("by_postSlug_and_status", ["postSlug", "status"])
     .index("by_createdAt", ["createdAt"]),
+  /** Durable admin hard-delete jobs until the matching GitHub .mdoc is gone. */
+  pendingGithubDeletes: defineTable({
+    slug: v.string(),
+    createdAt: v.number(),
+    attempts: v.number(),
+    lastError: v.optional(v.string()),
+  }).index("by_slug", ["slug"]),
 });

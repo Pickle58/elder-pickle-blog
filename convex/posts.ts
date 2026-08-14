@@ -59,6 +59,26 @@ function storageIdsFromBody(bodyMarkdoc: string): Id<"_storage">[] {
   return [...ids] as Id<"_storage">[];
 }
 
+/** True if any remaining post still uses this blob as hero or in body Markdoc. */
+async function storageIdStillReferenced(
+  ctx: MutationCtx,
+  storageId: Id<"_storage">,
+): Promise<boolean> {
+  // Blog post count stays small; scan is required for body-embedded storage URLs.
+  const posts = await ctx.db.query("posts").take(LIST_ADMIN_LIMIT);
+  for (const post of posts) {
+    if (post.heroImageId === storageId) {
+      return true;
+    }
+    for (const id of storageIdsFromBody(post.bodyMarkdoc)) {
+      if (id === storageId) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 async function hardRemovePostBySlug(
   ctx: MutationCtx,
   rawSlug: string,
@@ -88,7 +108,14 @@ async function hardRemovePostBySlug(
   for (const id of storageIdsFromBody(existing.bodyMarkdoc)) {
     storageIds.add(id);
   }
+
+  // Delete the post first so self-references no longer block blob cleanup.
+  await ctx.db.delete("posts", existing._id);
+
   for (const storageId of storageIds) {
+    if (await storageIdStillReferenced(ctx, storageId)) {
+      continue;
+    }
     try {
       await ctx.storage.delete(storageId);
     } catch (error) {
@@ -96,7 +123,6 @@ async function hardRemovePostBySlug(
     }
   }
 
-  await ctx.db.delete("posts", existing._id);
   return true;
 }
 
@@ -134,8 +160,11 @@ export const listAll = query({
     const identity = await requireIdentity(ctx);
     assertAdmin(identity.subject);
 
-    const rows = await ctx.db.query("posts").take(LIST_ADMIN_LIMIT);
-    rows.sort((a, b) => b.pubDate - a.pubDate);
+    const rows = await ctx.db
+      .query("posts")
+      .withIndex("by_pubDate")
+      .order("desc")
+      .take(LIST_ADMIN_LIMIT);
 
     return Promise.all(
       rows.map(async (row) => ({
@@ -260,7 +289,116 @@ export const hardRemoveBySlug = internalMutation({
   },
 });
 
-/** Admin hard-delete: Convex cleanup, then schedule GitHub .mdoc removal. */
+const GITHUB_DELETE_MAX_ATTEMPTS = 8;
+
+async function upsertPendingGithubDelete(
+  ctx: MutationCtx,
+  slug: string,
+  resetAttempts: boolean,
+): Promise<void> {
+  const existing = await ctx.db
+    .query("pendingGithubDeletes")
+    .withIndex("by_slug", (q) => q.eq("slug", slug))
+    .unique();
+  if (existing) {
+    if (resetAttempts) {
+      await ctx.db.patch(existing._id, {
+        createdAt: Date.now(),
+        attempts: 0,
+        lastError: undefined,
+      });
+    }
+    return;
+  }
+  await ctx.db.insert("pendingGithubDeletes", {
+    slug,
+    createdAt: Date.now(),
+    attempts: 0,
+  });
+}
+
+/** Record durable intent to delete the GitHub .mdoc (admin remove path). */
+export const enqueueGithubDelete = internalMutation({
+  args: {
+    slug: v.string(),
+    resetAttempts: v.optional(v.boolean()),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const slug = args.slug.trim();
+    if (!slug) {
+      throw new Error("Slug is required.");
+    }
+    await upsertPendingGithubDelete(ctx, slug, args.resetAttempts === true);
+    return null;
+  },
+});
+
+export const clearGithubDelete = internalMutation({
+  args: { slug: v.string() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const slug = args.slug.trim();
+    const existing = await ctx.db
+      .query("pendingGithubDeletes")
+      .withIndex("by_slug", (q) => q.eq("slug", slug))
+      .unique();
+    if (existing) {
+      await ctx.db.delete("pendingGithubDeletes", existing._id);
+    }
+    return null;
+  },
+});
+
+/**
+ * Record a GitHub cleanup failure. Returns whether another retry should be scheduled.
+ * After max attempts, leaves the tombstone and reports shouldRetry=false.
+ */
+export const recordGithubDeleteFailure = internalMutation({
+  args: {
+    slug: v.string(),
+    error: v.string(),
+    permanent: v.optional(v.boolean()),
+  },
+  returns: v.object({
+    shouldRetry: v.boolean(),
+    attempts: v.number(),
+  }),
+  handler: async (ctx, args) => {
+    const slug = args.slug.trim();
+    let row = await ctx.db
+      .query("pendingGithubDeletes")
+      .withIndex("by_slug", (q) => q.eq("slug", slug))
+      .unique();
+
+    if (!row) {
+      const id = await ctx.db.insert("pendingGithubDeletes", {
+        slug,
+        createdAt: Date.now(),
+        attempts: 0,
+      });
+      row = await ctx.db.get(id);
+      if (!row) {
+        throw new Error("Failed to create pending GitHub delete.");
+      }
+    }
+
+    const attempts = args.permanent
+      ? GITHUB_DELETE_MAX_ATTEMPTS
+      : row.attempts + 1;
+    await ctx.db.patch(row._id, {
+      attempts,
+      lastError: args.error.slice(0, 500),
+    });
+
+    return {
+      shouldRetry: attempts < GITHUB_DELETE_MAX_ATTEMPTS,
+      attempts,
+    };
+  },
+});
+
+/** Admin hard-delete: durable GitHub job + Convex cleanup, then schedule .mdoc removal. */
 export const remove = mutation({
   args: { slug: v.string() },
   returns: v.null(),
@@ -273,8 +411,18 @@ export const remove = mutation({
       throw new Error("Slug is required.");
     }
 
+    // Tombstone first so success means Convex remove + durable cleanup intent.
+    await upsertPendingGithubDelete(ctx, slug, true);
+
     const removed = await hardRemovePostBySlug(ctx, slug);
     if (!removed) {
+      const pending = await ctx.db
+        .query("pendingGithubDeletes")
+        .withIndex("by_slug", (q) => q.eq("slug", slug))
+        .unique();
+      if (pending) {
+        await ctx.db.delete("pendingGithubDeletes", pending._id);
+      }
       throw new Error("Post not found.");
     }
 
