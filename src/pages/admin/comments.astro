@@ -8,5 +8,10 @@ import Layout from "../../layouts/Layout.astro";
 <Layout title="Comment admin" description="Moderate Elder Pickle comments.">
   <h1 class="hero-title">Comment admin</h1>
   <p class="lede">Soft-hide or restore comments. Access is limited to the site owner.</p>
+  <p class="muted admin-nav">
+    <a href="/admin/posts">Posts</a>
+    ·
+    <a href="/admin/comments">Comments</a>
+  </p>
   <AdminComments client:only="react" />
 </Layout>

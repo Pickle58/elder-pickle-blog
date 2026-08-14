@@ -1,0 +1,20 @@
+---
+export const prerender = false;
+
+import AdminPosts from "../../components/AdminPosts";
+import Layout from "../../layouts/Layout.astro";
+---
+
+<Layout title="Post admin" description="Delete Elder Pickle posts.">
+  <h1 class="hero-title">Post admin</h1>
+  <p class="lede">
+    Permanently delete posts (and their comments). Access is limited to the site
+    owner.
+  </p>
+  <p class="muted admin-nav">
+    <a href="/admin/posts">Posts</a>
+    ·
+    <a href="/admin/comments">Comments</a>
+  </p>
+  <AdminPosts client:only="react" />
+</Layout>

@@ -29,7 +29,7 @@ pnpm convex dev
    - `COMMENT_NOTIFY_SECRET`
    - `NOTIFY_WORKER_URL` (full URL to `/notify-comment` on the Resend Worker)
    - `GITHUB_WEBHOOK_SECRET` (shared with the GitHub repo webhook)
-   - `GITHUB_TOKEN` (PAT with `contents:read` on this repo)
+   - `GITHUB_TOKEN` (PAT with `contents:read` and `contents:write` on this repo — write is required for admin post delete)
 
 5. On the Resend Worker (`../email-with-resend`), set secrets:
    - `RESEND_API_KEY`
@@ -68,7 +68,7 @@ You can still edit `src/content/posts/*.mdoc` files directly in your editor if y
 4. Run `pnpm dev` and open `http://127.0.0.1:4321/keystatic` — sign in with GitHub (repo write access).
 5. Saving in Keystatic commits to `master`; the Convex webhook ingests the post so `/` and `/posts/<slug>/` show it within seconds (no rebuild required). The webhook must use **JSON** content type (not form) and the same secret as `GITHUB_WEBHOOK_SECRET`.
 
-Comment moderation at `/admin/comments` still uses Clerk (`ADMIN_CLERK_USER_ID`), separate from Keystatic’s GitHub login.
+Comment moderation at `/admin/comments` and post deletion at `/admin/posts` use Clerk (`ADMIN_CLERK_USER_ID`), separate from Keystatic’s GitHub login.
 
 ## Scripts
 

@@ -243,7 +243,7 @@ export const ingestPush = internalAction({
     for (const path of paths.removedPostPaths) {
       const slug = slugFromPostPath(path);
       if (!slug) continue;
-      await ctx.runMutation(internal.posts.markRemovedBySlug, { slug });
+      await ctx.runMutation(internal.posts.hardRemoveBySlug, { slug });
     }
 
     await ingestPostPaths(
@@ -253,6 +253,81 @@ export const ingestPush = internalAction({
       paths.upsertPaths,
       new Set(paths.forceSlugs),
     );
+
+    return null;
+  },
+});
+
+const DEFAULT_BRANCH = "master";
+
+function contentsPathUrl(path: string): string {
+  const encoded = encodeURIComponent(path).replace(/%2F/g, "/");
+  return `https://api.github.com/repos/${REPO}/contents/${encoded}`;
+}
+
+/** Delete `src/content/posts/{slug}.mdoc` so admin hard-delete stays in sync with git. */
+export const deleteGithubMdoc = internalAction({
+  args: { slug: v.string() },
+  returns: v.null(),
+  handler: async (_ctx, args) => {
+    const token = process.env.GITHUB_TOKEN;
+    if (!token) {
+      console.error("Skipping GitHub mdoc delete: GITHUB_TOKEN missing.");
+      return null;
+    }
+
+    const slug = args.slug.trim();
+    if (!slug) {
+      return null;
+    }
+
+    const path = `${POSTS_PREFIX}${slug}.mdoc`;
+    const getUrl = `${contentsPathUrl(path)}?ref=${encodeURIComponent(DEFAULT_BRANCH)}`;
+    const getResponse = await fetch(getUrl, {
+      headers: githubHeaders(token, "application/vnd.github+json"),
+    });
+
+    if (getResponse.status === 404) {
+      return null;
+    }
+
+    if (!getResponse.ok) {
+      const text = await getResponse.text();
+      console.error(
+        `GitHub get ${path} failed (${getResponse.status}): ${text.slice(0, 300)}`,
+      );
+      return null;
+    }
+
+    const json = (await getResponse.json()) as GithubContentResponse;
+    if (!json.sha) {
+      console.error(`GitHub get ${path}: missing sha.`);
+      return null;
+    }
+
+    const deleteResponse = await fetch(contentsPathUrl(path), {
+      method: "DELETE",
+      headers: {
+        ...githubHeaders(token, "application/vnd.github+json"),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        message: `Delete post ${slug} via admin`,
+        sha: json.sha,
+        branch: DEFAULT_BRANCH,
+      }),
+    });
+
+    if (deleteResponse.status === 404) {
+      return null;
+    }
+
+    if (!deleteResponse.ok) {
+      const text = await deleteResponse.text();
+      console.error(
+        `GitHub delete ${path} failed (${deleteResponse.status}): ${text.slice(0, 300)}`,
+      );
+    }
 
     return null;
   },
